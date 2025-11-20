@@ -1,0 +1,7 @@
+{:paths ["src"]
+ :deps {}
+ :aliases {:dev {:extra-paths ["dev" "test"]
+                 :extra-deps {org.clojure/clojure {:mvn/version "1.12.3"}
+                              nrepl/nrepl {:mvn/version "1.5.1"}}}}
+ :mvn/repos {"central" {:url "https://repo1.maven.org/maven2/"}
+             "clojars" {:url "https://clojars.org/repo"}}}
