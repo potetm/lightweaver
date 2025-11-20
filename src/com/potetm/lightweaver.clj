@@ -9,7 +9,7 @@
 (ns com.potetm.lightweaver
   (:refer-clojure :exclude [run!])
   (:import
-    (clojure.lang APersistentVector)))
+    (java.util List)))
 
 
 (defn deps [ns]
@@ -78,7 +78,7 @@
                                                  (graph (the-ns ns))))
                                    {}
                                    namespaces))]
-     (sort-by (comp (partial APersistentVector/.indexOf sorted)
+     (sort-by (comp (partial List/.indexOf sorted)
                     the-ns)
               comparator
               namespaces))))
