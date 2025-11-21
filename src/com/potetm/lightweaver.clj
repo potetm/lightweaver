@@ -7,7 +7,9 @@
 ;; remove this notice, or any other, from this software.
 
 (ns com.potetm.lightweaver
-  (:refer-clojure :exclude [run!])
+  (:refer-clojure :exclude [requiring-resolve])
+  (:require
+    [clojure.core :as cc])
   (:import
     (java.util List)))
 
@@ -15,18 +17,23 @@
 (defn deps
   "Returns all alias and refer dependencies of a namespace."
   [ns]
-  (into (set (vals (ns-aliases ns)))
-        (comp (map #(:ns (meta (val %))))
-              (remove #(= % (the-ns 'clojure.core))))
-        (ns-refers ns)))
+  (-> (into #{}
+            (comp (map val)
+                  (map ns-name))
+            (ns-aliases (the-ns ns)))
+      (into (comp (map #(:ns (meta (val %))))
+                  (remove #(= % (the-ns 'clojure.core)))
+                  (map ns-name))
+            (ns-refers (the-ns ns)))))
 
 
 (defn graph*
   ([]
-   (graph* *ns*))
+   (graph* (ns-name *ns*)))
   ([ns]
    (loop [ret {}
-          todo #{ns}]
+          todo #{ns}
+          done #{}]
      (if (seq todo)
        (let [ns (first todo)
              ds (deps ns)]
@@ -37,19 +44,66 @@
                         (update ret ns (fnil into #{}))
                         ds)
                 (into (disj todo ns)
-                      ds)))
-       ret))))
+                      (remove done)
+                      ds)
+                (conj done ns)))
+       (with-meta ret
+         {:roots #{ns}})))))
 
 
 (defn graph
   "Given a root namespace, returns a hashmap of
   ns -> set-of-namespaces-that-depend-on-ns."
   ([]
-   (graph *ns*))
+   (graph (ns-name *ns*)))
   ([ns]
    ;; avoid cyclic starts
    (dissoc (graph* ns)
-           (the-ns 'com.potetm.lightweaver))))
+           'com.potetm.lightweaver)))
+
+
+(defn dups? [coll]
+  (= :dups
+     (reduce (fn [seen v]
+               (if (seen v)
+                 (reduced :dups)
+                 (conj seen v)))
+             #{}
+             coll)))
+
+
+(defn cycle-paths
+  "Return all cycling paths in graph g."
+  [g]
+  (loop [q (into []
+                 (map vector)
+                 (:roots (meta g)))
+         ret []]
+    (if (seq q)
+      (let [path (peek q)
+            n (peek path)
+            deps (into []
+                       (comp (filter #(contains? (val %)
+                                                 n))
+                             (map key))
+                       g)]
+        (if (dups? path)
+          (recur (pop q)
+                 (conj ret path))
+          (recur (into (pop q)
+                       (map #(conj path %))
+                       deps)
+                 ret)))
+      ret)))
+
+
+(defn cycle-node
+  "Walk from the known root of the tree to the cycle, find the shortest path to
+  a cycle, and return the last node before the cycle occurs.
+
+  For example, a cycle of [a b c b] will return c."
+  [g]
+  (peek (pop (apply min-key count (cycle-paths g)))))
 
 
 (defn topo-sort
@@ -60,16 +114,20 @@
    (topo-sort [] g))
   ([ret g]
    (loop [ret ret
-          g g]
-     (if (seq g)
+          g' g]
+     (if (seq g')
        (let [deps (into #{}
                         cat
-                        (vals g))
-             roots (into #{}
-                         (remove deps)
-                         (keys g))]
-         (recur (into ret (sort-by ns-name roots))
-                (reduce dissoc g roots)))
+                        (vals g'))
+             leaves (into #{}
+                          (remove deps)
+                          (keys g'))]
+         (if (seq leaves)
+           (recur (into ret (sort leaves))
+                  (reduce dissoc g' leaves))
+           (let [n (cycle-node g)]
+             (recur (conj ret n)
+                    (dissoc g' n)))))
        ret))))
 
 
@@ -79,81 +137,134 @@
   (topo-sort () g))
 
 
-(defn sort-namespaces
-  "Given a list of namespace symbols, turn them into namespace objects and
-  sort them topologically."
-  ([namespaces]
-   (sort-namespaces < namespaces))
-  ([comparator namespaces]
-   (let [sorted (topo-sort (reduce (fn [g ns]
-                                     (merge-with into
-                                                 g
-                                                 (graph (the-ns ns))))
-                                   {}
-                                   namespaces))]
-     (sort-by (comp (partial List/.indexOf sorted)
-                    the-ns)
-              comparator
-              namespaces))))
+(defn topo-compare
+  "Given a graph returned by `graph, return a comparator that can be applied to
+  a list of namespace symbols."
+  [g]
+  (let [sorted (topo-sort g)]
+    (fn [ns]
+      (List/.indexOf sorted ns))))
 
 
-(defn run!
+(defn merge-graph
+  "Given a list of namespace symbols, return a graph that includes the
+  dependency graphs of all of the namespaces."
+  [nss]
+  (reduce (fn [g ns]
+            (merge-with into
+                        (vary-meta g update :roots (fnil conj #{}) ns)
+                        (graph (or (and (find-ns ns)
+                                        ns)
+                                   (do (require ns)
+                                       ns)))))
+          {}
+          nss))
+
+
+(defn requiring-resolve [ns sym]
+  (cc/requiring-resolve (symbol (str ns)
+                                (str sym))))
+
+
+(defn plan-xf [repl sym]
+  (comp (map (fn [ns]
+               (get repl ns ns)))
+        (keep (fn [ns]
+                ;; If replacement is used, or an unloaded namespace is provided
+                ;; as a root, ns may not be loaded. Load it first, then look
+                ;; for sym.
+                (requiring-resolve ns sym)))))
+
+
+(defn plan
+  "Given var search criteria, return the list of vars in topological order.
+
+  :symbol - The var symbol to search for in the graph (e.g. 'start).
+  :roots - (Optional) The root namespaces used to build the graph. Defaults to [*ns*].
+  :namespaces - (Optional) Restrict plan to these namespaces.
+  :replace - (Optional) A hashmap of {'original.namespace 'replacement.namespace}."
+  [{sym :symbol
+    rs :roots
+    nss :namespaces
+    repl :replace}]
+  (let [rs (or rs [(ns-name *ns*)])]
+    (into []
+          (plan-xf repl sym)
+          (if (seq nss)
+            (sort-by (topo-compare (merge-graph rs))
+                     nss)
+            (topo-sort (merge-graph rs))))))
+
+
+(defn plan-rev
+  "Given var search criteria, return the list of vars in reverse topological
+  order.
+
+  :symbol - The var symbol to search for in the graph (e.g. 'stop).
+  :roots - The root namespaces used to build the graph. Defaults to [*ns*].
+  :namespaces - (Optional) Restrict plan to these namespaces.
+  :replace - (Optional) A hashmap of {'original.namespace 'replacement.namespace}."
+  [{sym :symbol
+    rs :roots
+    nss :namespaces
+    repl :replace}]
+  (let [rs (or rs [(ns-name *ns*)])]
+    (into []
+          (plan-xf repl sym)
+          (if (seq nss)
+            (sort-by (topo-compare (merge-graph rs))
+                     >
+                     nss)
+            (topo-sort-rev (merge-graph rs))))))
+
+
+(defn run
   "Reduce over namespaces running sym if it can be resolved and ignoring the
   namespace if sym cannot be resolved."
-  [init sym namespaces]
-  (reduce (fn [sys ns]
-            (if-some [v (ns-resolve ns sym)]
-              (v sys)
-              sys))
+  [init vars]
+  (reduce (fn [sys v]
+            (v sys))
           init
-          namespaces))
+          vars))
 
 
 (defn start
   "Start a system by running 'start in topological order for all namespaces.
 
-  init - The initial value supplied to reduce
-  namespaces - The optional list of namespaces to start. If not supplied, it
-               runs over all namespaces reachable via refer or alias from *ns*."
-  ([init]
-   (run! init
-         'start
-         (topo-sort (graph))))
-  ([init namespaces]
-   (run! init
-         'start
-         (sort-namespaces namespaces))))
+  :init - The initial value supplied to reduce.
+  :symbol - The symbol to search for in the graph. Defaults to 'start.
+  :root - The root namespace to initialize the graph. Defaults to *ns*.
+  :namespaces - (Optional) Restrict initialization to these namespaces.
+  :replace - A hashmap of {'original.namespace 'replacement.namespace}."
+  ([{i :init :as args}]
+   (run i
+        (plan (merge {:symbol 'start}
+                     args)))))
 
 
 (defn stop
-  "Start a system by running 'stop in topological order for all namespaces.
+  "Stop a system by running 'stop in topological order for all namespaces.
 
-  sys - The system returned from `start.
-  namespaces - The optional list of namespaces to stop. If not supplied, it
-               runs over all namespaces reachable via refer or alias from *ns*."
-  ([sys]
-   (run! sys
-         'stop
-         (topo-sort-rev (graph))))
-  ([sys namespaces]
-   (run! sys
-         'stop
-         (sort-namespaces > namespaces))))
+  :init - The system returned from `start.
+  :symbol - The symbol to search for in the graph. Defaults to 'stop.
+  :root - The root namespace to initialize the graph. Defaults to *ns*.
+  :namespaces - (Optional) Restrict initialization to these namespaces.
+  :replace - A hashmap of {'original.namespace 'replacement.namespace}."
+  ([{i :init :as args}]
+   (run i
+        (plan-rev (merge {:symbol 'stop}
+                         args)))))
 
 
 (defmacro with-sys
   "Initialize system, run body, and guarantee proper shutdown. Example usage:
 
-  (with-sys [sys {:initial 'value}]
+  (with-sys [sys {:init {:my-val 123}}]
     (do-work sys))"
-  [[binding init ?components] & body]
-  `(let [sys# ~(if (seq ?components)
-                 `(start ~init ~?components)
-                 `(start ~init))
+  [[binding args] & body]
+  `(let [sys# (start ~args)
          ~binding sys#]
      (try
        ~@body
        (finally
-         ~(if (seq ?components)
-            `(stop ~binding ~?components)
-            `(stop ~binding))))))
+         (stop (assoc ~args :init sys#))))))
