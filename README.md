@@ -191,7 +191,7 @@ this graph is. (See [Graph Cycles](#graph-cycles) below).
 Given a graph supplied by `graph`, topologically sort the graph. Note that this
 is a pure function and is not dependent on namespaces whatsoever, so it may be
 used as a general-purpose topological sort as long as your graph matches the
-form outlined in [`graph`](#graph)..
+form outlined in [`graph`](#graph).
 
 ```clj
 (lw/topo-sort (graph 'my.webserver))
@@ -303,10 +303,11 @@ off.
 
 ## Acknowledgements
 
-Big thank you to @jacobobryant for tipping me off to the pattern of using
-start/stop functions with a reduce during a dinner at Clojure Conj 2025! You
-should check out his framework [biff](https://github.com/jacobobryant/biff)
-which uses this pattern for its component management.
+Big thank you to [Jacob O'Bryant](https://github.com/jacobobryant) for tipping
+me off to the pattern of using start/stop functions with a reduce during a
+dinner at Clojure Conj 2025! You should check out his framework
+[biff](https://github.com/jacobobryant/biff) which uses this pattern for its
+component management.
 
 ## License
 
