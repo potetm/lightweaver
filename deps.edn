@@ -2,6 +2,13 @@
  :deps {}
  :aliases {:dev {:extra-paths ["dev" "test" "test-resources"]
                  :extra-deps {org.clojure/clojure {:mvn/version "1.12.3"}
-                              nrepl/nrepl {:mvn/version "1.5.1"}}}}
+                              nrepl/nrepl {:mvn/version "1.5.1"}}}
+           :build {:extra-paths ["dev"]
+                   :extra-deps {io.github.clojure/tools.build {:git/tag "v0.10.11"
+                                                               :git/sha "c6c670a4"
+                                                               :exclusions [org.slf4j/slf4j-nop]}
+                                slipset/deps-deploy {:mvn/version "0.2.2"
+                                                     :exclusions [org.slf4j/slf4j-nop]}}
+                   :ns-default build}}
  :mvn/repos {"central" {:url "https://repo1.maven.org/maven2/"}
              "clojars" {:url "https://clojars.org/repo"}}}

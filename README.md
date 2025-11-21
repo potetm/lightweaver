@@ -3,6 +3,12 @@
 Topological namespace sorting for making Clojure components with a simple
 reduce.
 
+## Current Release
+
+```clj
+com.potetm/lightweaver {:mvn/version "0.0.1"}
+```
+
 ## Quick Start
 
 ```clj
@@ -65,7 +71,7 @@ reduce.
 ## Rationale
 
 You do not need this library! This library is nifty. It's perhaps even
-necessary for some cases, but all of the goodness comes from writing your own
+necessary for some cases. But all of the goodness comes from writing your own
 simple start/stop functions that take a hashmap and return a hashmap, like so:
 
 ```clj
@@ -294,6 +300,13 @@ first, resulting in the following sort order:
 None of this should matter for normal usage, however if you see any funny
 business around cycling, it's _probably_ this algorithm that's throwing you
 off.
+
+## Acknowledgements
+
+Big thank you to @jacobobryant for tipping me off to the pattern of using
+start/stop functions with a reduce during a dinner at Clojure Conj 2025! You
+should check out his framework [biff](https://github.com/jacobobryant/biff)
+which uses this pattern for its component management.
 
 ## License
 
