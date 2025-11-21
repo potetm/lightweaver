@@ -4,6 +4,12 @@ Topological namespace sorting for making Clojure components with a simple
 reduce.
 
 ## Current Release
+Status: Alpha - subject to change. I'm using this in my production
+environments, but there have been enough gotchas during development that I may
+need to make changes in the next few weeks.
+
+That said, if you use `plan` during dev time, it cannot break your production
+environment.
 
 ```clj
 com.potetm/lightweaver {:mvn/version "0.0.1"}
