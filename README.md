@@ -1,6 +1,7 @@
 # Lightweaver
 
-Clojure components with a simple reduce.
+Topological namespace sorting for making Clojure components with a simple
+reduce.
 
 ## Quick Start
 
@@ -9,26 +10,46 @@ Clojure components with a simple reduce.
 
 ;; plan a system start in the current namespace
 (lw/plan {:symbol 'start})
+=> [#'my.database/start
+    #'my.param-store/start
+    #'my.webserver/start]
 
 ;; plan-rev takes the same arguments as plan
 (lw/plan-rev {:symbol 'stop})
+=> [#'my.webserver/stop
+    #'my.param-store/stop
+    #'my.database/stop]
 
 ;; plan a start from the my.background-jobs and my.webserver namespaces
 (lw/plan {:symbol 'start
           :roots '[my.background-jobs my.webserver]})
+=> [#'my.database/start
+    #'my.job-queue/start
+    #'my.param-store/start
+    #'my.background-jobs/start
+    #'my.webserver/start]
 
 ;; plan a start with a restricted list of namespaces
 (lw/plan {:symbol 'start
           :roots '[my.background-jobs my.webserver]
-          :namespaces [my.background-jobs
-                       my.webserver
-                       my.database
-                       my.param-store
-                       my.job-queue]})
+          ;; no my.job-queue
+          :namespaces '[my.background-jobs
+                        my.webserver
+                        my.database
+                        my.param-store]})
+=> [#'my.database/start
+    #'my.param-store/start
+    #'my.background-jobs/start
+    #'my.webserver/start]
 
 ;; replace a component with a dev-time component
 (lw/plan {:symbol 'start
           :replace '{my.job-queue dev.job-queue}})
+=> [#'my.database/start
+    #'dev.job-queue/start
+    #'my.param-store/start
+    #'my.background-jobs/start
+    #'my.webserver/start]
 
 ;; start takes all the same arguments as plan, plus an init value.
 (def sys (lw/start {:init {:env/name "prod"}}))
@@ -43,8 +64,24 @@ Clojure components with a simple reduce.
 
 ## Rationale
 
-Managing Clojure components ought to be managed via a simple hashmap with a
-reduce:
+You do not need this library! This library is nifty. It's perhaps even
+necessary for some cases, but all of the goodness comes from writing your own
+simple start/stop functions that take a hashmap and return a hashmap, like so:
+
+```clj
+(defn start [{args :jdbc/args :as sys}]
+  (let [conn (db args)]
+    (assoc sys
+      ::client {::c conn})))
+
+(defn stop [{{c ::c} ::client}]
+  (let [conn (db args)]
+    (.close c)
+    (dissoc sys ::client)))
+```
+
+Once you do that, all you have to do is order your start functions and call
+them via `reduce`:
 
 ```clj
 (defn start [config]
@@ -58,25 +95,20 @@ reduce:
            webserver/start]))
 ```
 
-Each `start` function takes the current state, and returns an updated state
-map. For example:
+That's it. Dependency injection via load ordering. (In this case,
+`webserver/start` depends on `job-queue/start`, `db/start`, and `param/start`.)
+You don't need anything else. There are no caveats. It will work no matter how
+you structure your components or your start functions. You do. not. need. this.
+library.
 
-```clj
-(defn start [{args :jdbc/args :as sys}]
-  (let [conn (db args)]
-    (assoc sys
-      ::client {::c conn})))
-```
+That said.
 
-Dependency injection happens via load ordering. In this case, `webserver/start`
-depends on `job-queue/start`, `db/start`, and `param/start`.
+There is _one_ shortcoming of this approach: It requires manual ordering of
+your components. If you, like the above example, have half-a-dozen components,
+that task is trivial. However, if you have dozens or hundreds of components,
+this approach grows unwieldy.
 
-The only shortcoming of this approach is it requires manual ordering of your
-components. If, like the above example, you have half-a-dozen components, that
-task is trivial. However, if you have dozens or hundreds of components, this
-approach grows unwieldy.
-
-That's where Lightweaver comes in!
+That's where Lightweaver comes in.
 
 Lightweaver makes a few assumptions:
 
@@ -90,7 +122,9 @@ properly order startup/shutdown.
 
 ## Usage
 
-There are two primary ways of using Lightweaver: plan/plan-rev and start/stop.
+All Lightweaver does is attempt to give you an accurate sorting for your
+component start/stop functions. There are two primary ways of using
+it: plan/plan-rev and start/stop.
 
 ### `plan` and `plan-rev`
 
@@ -119,7 +153,150 @@ using the provided `:init` value.
 As a bonus, there is a macro `with-sys` that accepts `start` arguments and a
 body, and ensures proper startup and shutdown.
 
+## General Purpose Namespace Tool
+
+Given that Lightweaver is, at its core, a topological sorting tool, I've opted
+to expose its internals for general-purpose use. This means that you can use it
+to examine, walk, and sort your namespaces independent of its component
+lifecycle management features.
+
+### `graph`
+
+Graph returns a hashmap of namespace -> dependant-namespaces. Take for example
+the simple system in the Quick Start:
+
+```clj
+(lw/graph 'my.webserver)
+=> {my.webserver #{},
+    my.database #{my.webserver},
+    my.param-store #{my.webserver}}
+```
+
+In addition, there is metadata on the graph to indicate what the root node of
+this graph is. (See [Graph Cycles](#graph-cycles) below).
+
+```clj
+(meta (lw/graph 'my.webserver))
+=> {:roots #{my.webserver}}
+```
+
+### `topo-sort`
+
+Given a graph supplied by `graph`, topologically sort the graph. Note that this
+is a pure function and is not dependent on namespaces whatsoever, so it may be
+used as a general-purpose topological sort as long as your graph matches the
+form outlined in [`graph`](#graph)..
+
+```clj
+(lw/topo-sort (graph 'my.webserver))
+=> [my.database my.param-store my.webserver]
+```
+
+### `topo-compare-keyfn`
+
+Given a graph supplied by `graph`, return a comparator that can be used as the
+first argument to `clojure.core/sort-by`.
+
+```clj
+(sort-by (topo-compare-keyfn (graph 'my.webserver))
+         '[my.webserver my.database])
+=> (my.database my.webserver)
+```
+
+## Gotchas
+### Aliases and Refers *only*
+
+Lightweaver works by looking at the in-memory namespaces loaded by Clojure. It
+_will_ attempt to load any namespace you give it, however it does not parse
+`ns` declarations from the disk.
+
+The problem is that Clojure does not track namespace requires. It only tracks
+aliases and refers. That means in order to use Lightweaver, you _must_ provide
+an alias or refer for any dependency you express.
+
+```clj
+;; do this
+(ns my.namespace
+  (:require
+    [my.job-queue :as jq]))
+
+
+;; or this
+(ns my.namespace
+  (:require
+    [my.job-queue :refer [status]]))
+
+
+;; NOT THIS
+(ns my.namespace
+  (:require
+    my.job-queue))
+```
+
+This should never be a problem if you put all your component usage functions in
+the same namespace as your component initialization functions, because you'll
+have to declare an alias or refer in order to _use_ the component anyways.
+
+### `:as-alias` in root namespaces
+
+It's important to remember that Lightweaver works by examining your namespace
+dependencies. If you require an actual namespace using `:as-alias`, it will not
+actually load the namespace. This is unimportant in most circumstances, but you
+do need to make sure the _root namespaces_ (i.e. the ones you pass via `:roots`
+or `*ns*` if you don't pass roots) actually load the namespaces.
+
+Therefore, the rule is: Don't use `:as-alias` for real namespaces in your roots.
+
+### Graph Cycles
+
+Prior to Clojure 1.11, it was difficult-but-possible to create cyclic namespace
+dependencies in Clojure. However, with the introduction of `:as-alias` it's not
+only possible, but common to create cycles. In addition, Clojure doesn't store
+any information in the namespace to differentiate between `:as` and `:as-alias`
+dependencies.
+
+Therefore, Lightweaver has to find some way to break namespace cycles.
+
+The way it works is:
+
+1. The root node of a graph is tracked in metadata.
+2. If a cycle is detected, all paths from the root nodes to the cycle are
+   walked, and the shortest path is selected.
+3. Using the shortest path, the last node _prior_ to the cycle is removed from
+   the graph and added to the topological sort.
+
+For example, given a graph like so:
+
+```clj
+(ns d (:require [a :as-alias a]))
+(ns c (:require [d :as d]))
+(ns b (:require [c :as c]))
+(ns a (:require [c :as c]))
+````
+
+And taking a graph with two root nodes `a` and `b`, Lightweaver will find the
+following cycles:
+
+```clj
+(cycle-paths (merge-graph ['a 'b]))
+=> [[b c d a c] [a c d a]]
+```
+
+From those, it will select the shortest path (`[a c d a]`), remove the node
+_before_ the cycle (`d`) from the graph, and add it to the topological sort
+first, resulting in the following sort order:
+
+```clj
+(topo-sort (merge-graph ['a 'b]))
+=> [d c a b]
+```
+
+None of this should matter for normal usage, however if you see any funny
+business around cycling, it's _probably_ this algorithm that's throwing you
+off.
+
 ## License
+
 Copyright © 2025 Timothy Pote
 
 Distributed under the Eclipse Public License version 1.0.

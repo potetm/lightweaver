@@ -27,10 +27,14 @@
             (ns-refers (the-ns ns)))))
 
 
-(defn graph*
+(defn graph
+  "Given a root namespace, returns a hashmap of ns -> set-of-namespaces-that-depend-on-ns."
   ([]
-   (graph* (ns-name *ns*)))
+   (graph (ns-name *ns*)))
   ([ns]
+   ;; User may or may not have required the root ns.
+   ;; Preemptively require it.
+   (require ns)
    (loop [ret {}
           todo #{ns}
           done #{}]
@@ -49,17 +53,6 @@
                 (conj done ns)))
        (with-meta ret
          {:roots #{ns}})))))
-
-
-(defn graph
-  "Given a root namespace, returns a hashmap of
-  ns -> set-of-namespaces-that-depend-on-ns."
-  ([]
-   (graph (ns-name *ns*)))
-  ([ns]
-   ;; avoid cyclic starts
-   (dissoc (graph* ns)
-           'com.potetm.lightweaver)))
 
 
 (defn dups? [coll]
@@ -137,7 +130,7 @@
   (topo-sort () g))
 
 
-(defn topo-compare
+(defn topo-compare-keyfn
   "Given a graph returned by `graph, return a comparator that can be applied to
   a list of namespace symbols."
   [g]
@@ -153,10 +146,7 @@
   (reduce (fn [g ns]
             (merge-with into
                         (vary-meta g update :roots (fnil conj #{}) ns)
-                        (graph (or (and (find-ns ns)
-                                        ns)
-                                   (do (require ns)
-                                       ns)))))
+                        (graph ns)))
           {}
           nss))
 
@@ -167,7 +157,10 @@
 
 
 (defn plan-xf [repl sym]
-  (comp (map (fn [ns]
+  (comp (remove (fn [ns]
+                  ;; avoid cyclic starts
+                  (= ns 'com.potetm.lightweaver)))
+        (map (fn [ns]
                (get repl ns ns)))
         (keep (fn [ns]
                 ;; If replacement is used, or an unloaded namespace is provided
@@ -191,7 +184,7 @@
     (into []
           (plan-xf repl sym)
           (if (seq nss)
-            (sort-by (topo-compare (merge-graph rs))
+            (sort-by (topo-compare-keyfn (merge-graph rs))
                      nss)
             (topo-sort (merge-graph rs))))))
 
@@ -212,7 +205,7 @@
     (into []
           (plan-xf repl sym)
           (if (seq nss)
-            (sort-by (topo-compare (merge-graph rs))
+            (sort-by (topo-compare-keyfn (merge-graph rs))
                      >
                      nss)
             (topo-sort-rev (merge-graph rs))))))
@@ -268,3 +261,15 @@
        ~@body
        (finally
          (stop (assoc ~args :init sys#))))))
+
+(comment
+  (merge-graph ['my.webserver
+                'my.background-jobs])
+
+  (in-ns 'my.webserver)
+  (require '[com.potetm.lightweaver :as lw])
+  (sort-by (topo-compare-keyfn (graph 'my.webserver))
+           '[my.webserver my.database])
+  (topo-sort (graph 'a))
+  (topo-sort (merge-graph ['a 'b]))
+  )
