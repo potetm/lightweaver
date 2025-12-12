@@ -7,11 +7,11 @@
 ;; remove this notice, or any other, from this software.
 
 (ns com.potetm.lightweaver
-  (:refer-clojure :exclude [requiring-resolve])
+  (:refer-clojure :exclude [requiring-resolve replace])
   (:require
     [clojure.core :as cc])
   (:import
-    (java.util List)))
+    (java.io FileNotFoundException)))
 
 
 (defn deps
@@ -22,8 +22,8 @@
                   (map ns-name))
             (ns-aliases (the-ns ns)))
       (into (comp (map #(:ns (meta (val %))))
-                  (remove #(= % (the-ns 'clojure.core)))
-                  (map ns-name))
+                  (map ns-name)
+                  (remove #(= % 'clojure.core)))
             (ns-refers (the-ns ns)))))
 
 
@@ -118,7 +118,7 @@
          (if (seq leaves)
            (recur (into ret (sort leaves))
                   (reduce dissoc g' leaves))
-           (let [n (cycle-node g)]
+           (let [n (cycle-node g')]
              (recur (conj ret n)
                     (dissoc g' n)))))
        ret))))
@@ -130,18 +130,9 @@
   (topo-sort () g))
 
 
-(defn topo-compare-keyfn
-  "Given a graph returned by `graph, return a comparator that can be applied to
-  a list of namespace symbols."
-  [g]
-  (let [sorted (topo-sort g)]
-    (fn [ns]
-      (List/.indexOf sorted ns))))
-
-
 (defn merge-graph
   "Given a list of namespace symbols, return a graph that includes the
-  dependency graphs of all of the namespaces."
+  dependency graphs of all the namespaces."
   [nss]
   (reduce (fn [g ns]
             (merge-with into
@@ -152,16 +143,17 @@
 
 
 (defn requiring-resolve [ns sym]
-  (cc/requiring-resolve (symbol (str ns)
-                                (str sym))))
+  (try
+    (cc/requiring-resolve (symbol (str ns)
+                                  (str sym)))
+    ;; as-alias deps cannot be required
+    (catch FileNotFoundException _)))
 
 
-(defn plan-xf [repl sym]
+(defn plan-xf [sym]
   (comp (remove (fn [ns]
                   ;; avoid cyclic starts
                   (= ns 'com.potetm.lightweaver)))
-        (map (fn [ns]
-               (get repl ns ns)))
         (keep (fn [ns]
                 ;; If replacement is used, or an unloaded namespace is provided
                 ;; as a root, ns may not be loaded. Load it first, then look
@@ -169,24 +161,33 @@
                 (requiring-resolve ns sym)))))
 
 
+(defn namespaces
+  "A transducer that will restrict a plan to the provided set of namespaces."
+  [nss]
+  (filter (set nss)))
+
+
+(defn replace
+  "A transducer that takes a hashmap of {'original.namespace 'replacement.namespace}
+  and replaces namespaces (e.g. for testing)."
+  [kmap]
+  (map #(get kmap % %)))
+
+
 (defn plan
   "Given var search criteria, return the list of vars in topological order.
 
   :symbol - The var symbol to search for in the graph (e.g. 'start).
-  :roots - (Optional) The root namespaces used to build the graph. Defaults to [*ns*].
-  :namespaces - (Optional) Restrict plan to these namespaces.
-  :replace - (Optional) A hashmap of {'original.namespace 'replacement.namespace}."
+  :roots - The root namespaces used to build the graph.
+  :xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
   [{sym :symbol
     rs :roots
-    nss :namespaces
-    repl :replace}]
-  (let [rs (or rs [(ns-name *ns*)])]
-    (into []
-          (plan-xf repl sym)
-          (if (seq nss)
-            (sort-by (topo-compare-keyfn (merge-graph rs))
-                     nss)
-            (topo-sort (merge-graph rs))))))
+    xf :xf}]
+  (into []
+        (if xf
+          (comp xf (plan-xf sym))
+          (plan-xf sym))
+        (topo-sort (merge-graph rs))))
 
 
 (defn plan-rev
@@ -194,21 +195,16 @@
   order.
 
   :symbol - The var symbol to search for in the graph (e.g. 'stop).
-  :roots - The root namespaces used to build the graph. Defaults to [*ns*].
-  :namespaces - (Optional) Restrict plan to these namespaces.
-  :replace - (Optional) A hashmap of {'original.namespace 'replacement.namespace}."
+  :roots - The root namespaces used to build the graph.
+  :xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
   [{sym :symbol
     rs :roots
-    nss :namespaces
-    repl :replace}]
-  (let [rs (or rs [(ns-name *ns*)])]
-    (into []
-          (plan-xf repl sym)
-          (if (seq nss)
-            (sort-by (topo-compare-keyfn (merge-graph rs))
-                     >
-                     nss)
-            (topo-sort-rev (merge-graph rs))))))
+    xf :xf}]
+  (into []
+        (if xf
+          (comp xf (plan-xf sym))
+          (plan-xf sym))
+        (topo-sort-rev (merge-graph rs))))
 
 
 (defn run
@@ -240,9 +236,7 @@
 
   :init - The system returned from `start.
   :symbol - The symbol to search for in the graph. Defaults to 'stop.
-  :root - The root namespace to initialize the graph. Defaults to *ns*.
-  :namespaces - (Optional) Restrict initialization to these namespaces.
-  :replace - A hashmap of {'original.namespace 'replacement.namespace}."
+  :root - The root namespace to initialize the graph."
   ([{i :init :as args}]
    (run i
         (plan-rev (merge {:symbol 'stop}
@@ -261,6 +255,7 @@
        ~@body
        (finally
          (stop (assoc ~args :init sys#))))))
+
 
 (comment
   (merge-graph ['my.webserver

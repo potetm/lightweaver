@@ -20,14 +20,16 @@ com.potetm/lightweaver {:mvn/version "0.0.1"}
 ```clj
 (require '[com.potetm.lightweaver :as lw])
 
-;; plan a system start in the current namespace
-(lw/plan {:symbol 'start})
+;; plan a system start in 'my.webserver
+(lw/plan {:symbol 'start
+          :roots ['my.webserver]})
 => [#'my.database/start
     #'my.param-store/start
     #'my.webserver/start]
 
 ;; plan-rev takes the same arguments as plan
-(lw/plan-rev {:symbol 'stop})
+(lw/plan-rev {:symbol 'stop
+              :roots ['my.webserver]})
 => [#'my.webserver/stop
     #'my.param-store/stop
     #'my.database/stop]
@@ -41,22 +43,24 @@ com.potetm/lightweaver {:mvn/version "0.0.1"}
     #'my.background-jobs/start
     #'my.webserver/start]
 
-;; plan a start with a restricted list of namespaces
+;; plan takes an :xf argument and provides some simple helpers.
+;; For example, `lw/namespaces restricts the set of returned namespaces.
 (lw/plan {:symbol 'start
           :roots '[my.background-jobs my.webserver]
           ;; no my.job-queue
-          :namespaces '[my.background-jobs
-                        my.webserver
-                        my.database
-                        my.param-store]})
+          :xf (lw/namespaces '[my.background-jobs
+                               my.webserver
+                               my.database
+                               my.param-store])})
 => [#'my.database/start
     #'my.param-store/start
     #'my.background-jobs/start
     #'my.webserver/start]
 
-;; replace a component with a dev-time component
+;; Or you can replace a component with a dev-time component
 (lw/plan {:symbol 'start
-          :replace '{my.job-queue dev.job-queue}})
+          :roots '[my.background-jobs my.webserver]
+          :xf (lw/replace '{my.job-queue dev.job-queue})})
 => [#'my.database/start
     #'dev.job-queue/start
     #'my.param-store/start
@@ -147,9 +151,8 @@ vars that you then copy/paste into your code.
 `plan` takes a hashmap with the following keys:
 
 * `:symbol` - The var symbol to search for in the graph (e.g. 'start).
-* `:roots` - (Optional) The root namespaces used to build the graph. Defaults to `[*ns*]`.
-* `:namespaces` - (Optional) Restrict plan to these namespaces.
-* `:replace` - (Optional) A hashmap of `{'original.namespace 'replacement.namespace}`.
+* `:roots` - The root namespaces used to build the graph.
+* `:xf` - xform to apply to the sorted namespaces. See also namespaces, replace.
 
 `plan-rev` is the exact same as `plan`, except the returned list is
 reverse-topologically sorted (suitable for stopping).
@@ -252,10 +255,10 @@ have to declare an alias or refer in order to _use_ the component anyways.
 ### `:as-alias` in root namespaces
 
 It's important to remember that Lightweaver works by examining your namespace
-dependencies. If you require an actual namespace using `:as-alias`, it will not
-actually load the namespace. This is unimportant in most circumstances, but you
-do need to make sure the _root namespaces_ (i.e. the ones you pass via `:roots`
-or `*ns*` if you don't pass roots) actually load the namespaces.
+dependencies. If you require an actual namespace using `:as-alias`, Clojure
+will not actually load the namespace. This is unimportant in most
+circumstances, but you do need to make sure the _root namespaces_ (i.e. the
+ones you pass via `:roots`) actually load the namespaces.
 
 Therefore, the rule is: Don't use `:as-alias` for real namespaces in your roots.
 
@@ -290,7 +293,7 @@ And taking a graph with two root nodes `a` and `b`, Lightweaver will find the
 following cycles:
 
 ```clj
-(cycle-paths (merge-graph ['a 'b]))
+(lw/cycle-paths (lw/merge-graph ['a 'b]))
 => [[b c d a c] [a c d a]]
 ```
 
@@ -299,11 +302,11 @@ _before_ the cycle (`d`) from the graph, and add it to the topological sort
 first, resulting in the following sort order:
 
 ```clj
-(topo-sort (merge-graph ['a 'b]))
+(lw/topo-sort (lw/merge-graph ['a 'b]))
 => [d c a b]
 ```
 
-None of this should matter for normal usage, however if you see any funny
+None of this should matter for normal usage. However if you see any funny
 business around cycling, it's _probably_ this algorithm that's throwing you
 off.
 

@@ -5,21 +5,22 @@
 
 (load-file "test-resources/cycling.clj")
 (load-file "test-resources/simple_app.clj")
+(load-file "test-resources/multi_cycle.clj")
 
 (deftest plan
   (testing "it works"
-    (in-ns 'my.webserver)
     (is (= [#'my.database/start
             #'my.param-store/start
             #'my.webserver/start]
-           (lw/plan {:symbol 'start}))))
+           (lw/plan {:symbol 'start
+                     :roots #{'my.webserver}}))))
 
   (testing "plan-rev"
-    (in-ns 'my.webserver)
     (is (= [#'my.webserver/start
             #'my.param-store/start
             #'my.database/start]
-           (lw/plan-rev {:symbol 'start}))))
+           (lw/plan-rev {:symbol 'start
+                         :roots #{'my.webserver}}))))
 
   (testing "roots"
     (in-ns 'com.potetm.lightweaver-test)
@@ -49,10 +50,10 @@
            (lw/plan {:symbol 'start
                      :roots '[my.background-jobs my.webserver]
                      ;; no my.job-queue
-                     :namespaces '[my.background-jobs
-                                   my.webserver
-                                   my.database
-                                   my.param-store]}))))
+                     :xf (lw/namespaces '[my.background-jobs
+                                          my.webserver
+                                          my.database
+                                          my.param-store])}))))
 
   (testing "replace"
     (in-ns 'com.potetm.lightweaver-test)
@@ -63,7 +64,7 @@
             #'my.webserver/start]
            (lw/plan {:symbol 'start
                      :roots '[my.background-jobs my.webserver]
-                     :replace '{my.job-queue dev.job-queue}})))))
+                     :xf (lw/replace '{my.job-queue dev.job-queue})})))))
 
 (deftest cycles
   (testing "it works"
@@ -77,3 +78,23 @@
   (testing "it finds cycle paths"
     (is (= '[[b c d a c] [a c d a]]
            (lw/cycle-paths (lw/merge-graph ['a 'b]))))))
+
+
+(deftest multi-cycles
+  (testing "it works"
+    (is (= '[mc.two.c mc.two.b mc.one.c mc.one.b mc.one.a]
+           (lw/topo-sort (lw/graph 'mc.one.a)))))
+
+  (testing "merge-graph"
+    (is (= '[mc.two.c mc.two.b mc.one.c mc.one.b mc.one.a mc.two.a]
+           (lw/topo-sort (lw/merge-graph ['mc.one.a 'mc.two.a]))))))
+
+
+(comment
+  (lw/plan {:symbol 'start
+            :roots '[my.background-jobs my.webserver]
+            :xf (lw/replace '{my.job-queue dev.job-queue})})
+
+  )
+
+
