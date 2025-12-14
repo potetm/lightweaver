@@ -12,23 +12,23 @@
     (is (= [#'my.database/start
             #'my.param-store/start
             #'my.webserver/start]
-           (lw/plan {:symbol 'start
-                     :roots #{'my.webserver}}))))
+           (lw/plan {::lw/symbol 'start
+                     ::lw/roots #{'my.webserver}}))))
 
   (testing "plan-rev"
     (is (= [#'my.webserver/start
             #'my.param-store/start
             #'my.database/start]
-           (lw/plan-rev {:symbol 'start
-                         :roots #{'my.webserver}}))))
+           (lw/plan-rev {::lw/symbol 'start
+                         ::lw/roots #{'my.webserver}}))))
 
   (testing "roots"
     (in-ns 'com.potetm.lightweaver-test)
     (is (= [#'my.database/start
             #'my.param-store/start
             #'my.webserver/start]
-           (lw/plan {:symbol 'start
-                     :roots '[my.webserver]}))))
+           (lw/plan {::lw/symbol 'start
+                     ::lw/roots '[my.webserver]}))))
 
   (testing "multiple roots"
     (in-ns 'com.potetm.lightweaver-test)
@@ -37,8 +37,8 @@
             #'my.param-store/start
             #'my.background-jobs/start
             #'my.webserver/start]
-           (lw/plan {:symbol 'start
-                     :roots '[my.webserver
+           (lw/plan {::lw/symbol 'start
+                     ::lw/roots '[my.webserver
                               my.background-jobs]}))))
 
   (testing "restricted namespaces"
@@ -47,10 +47,10 @@
             #'my.param-store/start
             #'my.background-jobs/start
             #'my.webserver/start]
-           (lw/plan {:symbol 'start
-                     :roots '[my.background-jobs my.webserver]
+           (lw/plan {::lw/symbol 'start
+                     ::lw/roots '[my.background-jobs my.webserver]
                      ;; no my.job-queue
-                     :xf (lw/namespaces '[my.background-jobs
+                     ::lw/xf (lw/namespaces '[my.background-jobs
                                           my.webserver
                                           my.database
                                           my.param-store])}))))
@@ -62,9 +62,9 @@
             #'my.param-store/start
             #'my.background-jobs/start
             #'my.webserver/start]
-           (lw/plan {:symbol 'start
-                     :roots '[my.background-jobs my.webserver]
-                     :xf (lw/replace '{my.job-queue dev.job-queue})})))))
+           (lw/plan {::lw/symbol 'start
+                     ::lw/roots '[my.background-jobs my.webserver]
+                     ::lw/xf (lw/replace '{my.job-queue dev.job-queue})})))))
 
 (deftest cycles
   (testing "it works"
@@ -91,9 +91,9 @@
 
 
 (comment
-  (lw/plan {:symbol 'start
-            :roots '[my.background-jobs my.webserver]
-            :xf (lw/replace '{my.job-queue dev.job-queue})})
+  (lw/plan {::lw/symbol 'start
+            ::lw/roots '[my.background-jobs my.webserver]
+            ::lw/xf (lw/replace '{my.job-queue dev.job-queue})})
 
   )
 

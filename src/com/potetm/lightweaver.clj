@@ -52,7 +52,7 @@
                       ds)
                 (conj done ns)))
        (with-meta ret
-         {:roots #{ns}})))))
+         {::roots #{ns}})))))
 
 
 (defn dups? [coll]
@@ -70,7 +70,7 @@
   [g]
   (loop [q (into []
                  (map vector)
-                 (:roots (meta g)))
+                 (::roots (meta g)))
          ret []]
     (if (seq q)
       (let [path (peek q)
@@ -136,7 +136,7 @@
   [nss]
   (reduce (fn [g ns]
             (merge-with into
-                        (vary-meta g update :roots (fnil conj #{}) ns)
+                        (vary-meta g update ::roots (fnil conj #{}) ns)
                         (graph ns)))
           {}
           nss))
@@ -177,12 +177,12 @@
 (defn plan
   "Given var search criteria, return the list of vars in topological order.
 
-  :symbol - The var symbol to search for in the graph (e.g. 'start).
-  :roots - The root namespaces used to build the graph.
-  :xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
-  [{sym :symbol
-    rs :roots
-    xf :xf}]
+  ::symbol - The var symbol to search for in the graph (e.g. 'start).
+  ::roots - The root namespaces used to build the graph.
+  ::xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
+  [{sym ::symbol
+    rs ::roots
+    xf ::xf}]
   (into []
         (if xf
           (comp xf (plan-xf sym))
@@ -194,12 +194,12 @@
   "Given var search criteria, return the list of vars in reverse topological
   order.
 
-  :symbol - The var symbol to search for in the graph (e.g. 'stop).
-  :roots - The root namespaces used to build the graph.
-  :xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
-  [{sym :symbol
-    rs :roots
-    xf :xf}]
+  ::symbol - The var symbol to search for in the graph (e.g. 'stop).
+  ::roots - The root namespaces used to build the graph.
+  ::xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
+  [{sym ::symbol
+    rs ::roots
+    xf ::xf}]
   (into []
         (if xf
           (comp xf (plan-xf sym))
@@ -220,33 +220,31 @@
 (defn start
   "Start a system by running 'start in topological order for all namespaces.
 
-  :init - The initial value supplied to reduce.
-  :symbol - The symbol to search for in the graph. Defaults to 'start.
-  :root - The root namespace to initialize the graph. Defaults to *ns*.
-  :namespaces - (Optional) Restrict initialization to these namespaces.
-  :replace - A hashmap of {'original.namespace 'replacement.namespace}."
-  ([{i :init :as args}]
-   (run i
-        (plan (merge {:symbol 'start}
-                     args)))))
+  ::symbol - The symbol to search for in the graph. Defaults to 'start.
+  ::roots - The root namespaces to initialize the graph.
+  ::xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
+  ([sys]
+   (run sys
+        (plan (merge {::symbol 'start}
+                     sys)))))
 
 
 (defn stop
   "Stop a system by running 'stop in topological order for all namespaces.
 
-  :init - The system returned from `start.
-  :symbol - The symbol to search for in the graph. Defaults to 'stop.
-  :root - The root namespace to initialize the graph."
-  ([{i :init :as args}]
-   (run i
-        (plan-rev (merge {:symbol 'stop}
-                         args)))))
+  ::symbol - The symbol to search for in the graph. Defaults to 'stop.
+  ::roots - The root namespaces to initialize the graph. (Usually provided from `start.)"
+  ([sys]
+   (run sys
+        (plan-rev (merge {::symbol 'stop}
+                         sys)))))
 
 
 (defmacro with-sys
   "Initialize system, run body, and guarantee proper shutdown. Example usage:
 
-  (with-sys [sys {:init {:my-val 123}}]
+  (with-sys [sys {:my-val 123
+                  ::roots '[my.root.ns]}]
     (do-work sys))"
   [[binding args] & body]
   `(let [sys# (start ~args)
@@ -254,7 +252,7 @@
      (try
        ~@body
        (finally
-         (stop (assoc ~args :init sys#))))))
+         (stop sys#)))))
 
 
 (comment

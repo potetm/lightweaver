@@ -21,22 +21,22 @@ com.potetm/lightweaver {:mvn/version "0.0.1"}
 (require '[com.potetm.lightweaver :as lw])
 
 ;; plan a system start in 'my.webserver
-(lw/plan {:symbol 'start
-          :roots ['my.webserver]})
+(lw/plan {::lw/symbol 'start
+          ::lw/roots ['my.webserver]})
 => [#'my.database/start
     #'my.param-store/start
     #'my.webserver/start]
 
 ;; plan-rev takes the same arguments as plan
-(lw/plan-rev {:symbol 'stop
-              :roots ['my.webserver]})
+(lw/plan-rev {::lw/symbol 'stop
+              ::lw/roots ['my.webserver]})
 => [#'my.webserver/stop
     #'my.param-store/stop
     #'my.database/stop]
 
 ;; plan a start from the my.background-jobs and my.webserver namespaces
-(lw/plan {:symbol 'start
-          :roots '[my.background-jobs my.webserver]})
+(lw/plan {::lw/symbol 'start
+          ::lw/roots '[my.background-jobs my.webserver]})
 => [#'my.database/start
     #'my.job-queue/start
     #'my.param-store/start
@@ -45,36 +45,39 @@ com.potetm/lightweaver {:mvn/version "0.0.1"}
 
 ;; plan takes an :xf argument and provides some simple helpers.
 ;; For example, `lw/namespaces restricts the set of returned namespaces.
-(lw/plan {:symbol 'start
-          :roots '[my.background-jobs my.webserver]
+(lw/plan {::lw/symbol 'start
+          ::lw/roots '[my.background-jobs my.webserver]
           ;; no my.job-queue
-          :xf (lw/namespaces '[my.background-jobs
-                               my.webserver
-                               my.database
-                               my.param-store])})
+          ::lw/xf (lw/namespaces '[my.background-jobs
+                                   my.webserver
+                                   my.database
+                                   my.param-store])})
 => [#'my.database/start
     #'my.param-store/start
     #'my.background-jobs/start
     #'my.webserver/start]
 
 ;; Or you can replace a component with a dev-time component
-(lw/plan {:symbol 'start
-          :roots '[my.background-jobs my.webserver]
-          :xf (lw/replace '{my.job-queue dev.job-queue})})
+(lw/plan {::lw/symbol 'start
+          ::lw/roots '[my.background-jobs my.webserver]
+          ::lw/xf (lw/replace '{my.job-queue dev.job-queue})})
 => [#'my.database/start
     #'dev.job-queue/start
     #'my.param-store/start
     #'my.background-jobs/start
     #'my.webserver/start]
 
-;; start takes all the same arguments as plan, plus an init value.
-(def sys (lw/start {:init {:env/name "prod"}}))
+;; start takes a map with all the same arguments as plan and passes.
+;; the map is passed directly to reduce.
+(def sys (lw/start {:env/name "prod"
+                    ::lw/roots '[my.background-jobs my.webserver]}))
 
-;; same for stop
-(lw/stop {:init sys})
+;; since ::lw/roots was passed to start, you can just reuse it for stop.
+(lw/stop sys)
 
 ;; convenience macro to start/stop a system
-(lw/with-sys [sys {:init {:env/name "prod}}]
+(lw/with-sys [sys {:env/name "prod
+                   ::lw/roots '[my.background-jobs my.webserver]}]
   (do-the-things sys))
 ```
 
@@ -150,9 +153,9 @@ vars that you then copy/paste into your code.
 
 `plan` takes a hashmap with the following keys:
 
-* `:symbol` - The var symbol to search for in the graph (e.g. 'start).
-* `:roots` - The root namespaces used to build the graph.
-* `:xf` - xform to apply to the sorted namespaces. See also namespaces, replace.
+* `::lw/symbol` - The var symbol to search for in the graph (e.g. 'start).
+* `::lw/roots` - The root namespaces used to build the graph.
+* `::lw/xf` - xform to apply to the sorted namespaces. See also namespaces, replace.
 
 `plan-rev` is the exact same as `plan`, except the returned list is
 reverse-topologically sorted (suitable for stopping).
@@ -161,7 +164,7 @@ reverse-topologically sorted (suitable for stopping).
 
 `start` and `stop` work just like `plan` and `plan-rev`, except instead of
 returning the plan, they actually _run_ the plan by reducing over the vars
-using the provided `:init` value.
+with the provided hashmap as initial state.
 
 ### `with-sys`
 
@@ -192,7 +195,7 @@ this graph is. (See [Graph Cycles](#graph-cycles) below).
 
 ```clj
 (meta (lw/graph 'my.webserver))
-=> {:roots #{my.webserver}}
+=> {::lw/roots #{my.webserver}}
 ```
 
 ### `topo-sort`
