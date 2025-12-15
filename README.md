@@ -76,7 +76,7 @@ com.potetm/lightweaver {:mvn/version "0.0.2"}
 (lw/stop sys)
 
 ;; convenience macro to start/stop a system
-(lw/with-sys [sys {:env/name "prod
+(lw/with-sys [sys {:env/name "prod"
                    ::lw/roots '[my.background-jobs my.webserver]}]
   (do-the-things sys))
 ```
