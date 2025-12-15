@@ -10,7 +10,7 @@
 
 
 (def lib 'com.potetm/lightweaver)
-(def version "0.0.1") ;; Did you update the README?
+(def version "0.0.2") ;; Did you update the README?
 (def jar-file (str "target/lightweaver-" version ".jar"))
 (def sources ["src"])
 (def classes "target/classes")
