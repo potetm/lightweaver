@@ -21,11 +21,11 @@ com.potetm/lightweaver {:mvn/version "0.0.2"}
 (require '[com.potetm.lightweaver :as lw])
 
 ;; plan a system start in 'my.webserver
-(lw/plan {::lw/symbol 'start
+(lw/plan {::lw/symbol 'lw:start
           ::lw/roots ['my.webserver]})
-=> [#'my.database/start
-    #'my.param-store/start
-    #'my.webserver/start]
+=> [#'my.database/lw:start
+    #'my.param-store/lw:start
+    #'my.webserver/lw:start]
 
 ;; plan-rev takes the same arguments as plan
 (lw/plan-rev {::lw/symbol 'stop
@@ -35,37 +35,37 @@ com.potetm/lightweaver {:mvn/version "0.0.2"}
     #'my.database/stop]
 
 ;; plan a start from the my.background-jobs and my.webserver namespaces
-(lw/plan {::lw/symbol 'start
+(lw/plan {::lw/symbol 'lw:start
           ::lw/roots '[my.background-jobs my.webserver]})
-=> [#'my.database/start
-    #'my.job-queue/start
-    #'my.param-store/start
-    #'my.background-jobs/start
-    #'my.webserver/start]
+=> [#'my.database/lw:start
+    #'my.job-queue/lw:start
+    #'my.param-store/lw:start
+    #'my.background-jobs/lw:start
+    #'my.webserver/lw:start]
 
 ;; plan takes an :xf argument and provides some simple helpers.
 ;; For example, `lw/namespaces restricts the set of returned namespaces.
-(lw/plan {::lw/symbol 'start
+(lw/plan {::lw/symbol 'lw:start
           ::lw/roots '[my.background-jobs my.webserver]
           ;; no my.job-queue
           ::lw/xf (lw/namespaces '[my.background-jobs
                                    my.webserver
                                    my.database
                                    my.param-store])})
-=> [#'my.database/start
-    #'my.param-store/start
-    #'my.background-jobs/start
-    #'my.webserver/start]
+=> [#'my.database/lw:start
+    #'my.param-store/lw:start
+    #'my.background-jobs/lw:start
+    #'my.webserver/lw:start]
 
 ;; Or you can replace a component with a dev-time component
-(lw/plan {::lw/symbol 'start
+(lw/plan {::lw/symbol 'lw:start
           ::lw/roots '[my.background-jobs my.webserver]
           ::lw/xf (lw/replace '{my.job-queue dev.job-queue})})
-=> [#'my.database/start
-    #'dev.job-queue/start
-    #'my.param-store/start
-    #'my.background-jobs/start
-    #'my.webserver/start]
+=> [#'my.database/lw:start
+    #'dev.job-queue/lw:start
+    #'my.param-store/lw:start
+    #'my.background-jobs/lw:start
+    #'my.webserver/lw:start]
 
 ;; start takes a map with all the same arguments as plan and passes.
 ;; the map is passed directly to reduce.
@@ -153,7 +153,7 @@ vars that you then copy/paste into your code.
 
 `plan` takes a hashmap with the following keys:
 
-* `::lw/symbol` - The var symbol to search for in the graph (e.g. 'start).
+* `::lw/symbol` - The var symbol to search for in the graph (default `'lw:start`).
 * `::lw/roots` - The root namespaces used to build the graph.
 * `::lw/xf` - xform to apply to the sorted namespaces. See also namespaces, replace.
 

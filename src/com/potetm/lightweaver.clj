@@ -9,7 +9,8 @@
 (ns com.potetm.lightweaver
   (:refer-clojure :exclude [requiring-resolve replace])
   (:require
-    [clojure.core :as cc])
+    [clojure.core :as cc]
+    [clojure.tools.logging :as log])
   (:import
     (java.io FileNotFoundException)))
 
@@ -217,27 +218,50 @@
           vars))
 
 
-(defn start
-  "Start a system by running 'start in topological order for all namespaces.
-
-  ::symbol - The symbol to search for in the graph. Defaults to 'start.
-  ::roots - The root namespaces to initialize the graph.
-  ::xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
-  ([sys]
-   (run sys
-        (plan (merge {::symbol 'start}
-                     sys)))))
-
-
 (defn stop
   "Stop a system by running 'stop in topological order for all namespaces.
 
-  ::symbol - The symbol to search for in the graph. Defaults to 'stop.
+  ::stop-sym - The symbol to search for in the graph. Defaults to 'lw:stop.
   ::roots - The root namespaces to initialize the graph. (Usually provided from `start.)"
-  ([sys]
-   (run sys
-        (plan-rev (merge {::symbol 'stop}
-                         sys)))))
+  ([{s ::stop-sym :as sys
+     :or {s 'lw:stop}}]
+   (reduce (fn [sys f]
+             (try
+               (f sys)
+               (catch Exception e
+                 (log/error e
+                            "Error stopping system. Continuing..."
+                            {:sys sys
+                             :fn f})
+                 sys)))
+           sys
+           (plan-rev (merge {::symbol s}
+                            sys)))))
+
+
+(defn start
+  "Start a system by running 'start in topological order for all namespaces.
+
+  ::start-sym - The symbol to search for in the graph. Defaults to 'lw:start.
+  ::roots - The root namespaces to initialize the graph.
+  ::xf - xform to apply to the sorted namespaces. See also `namespaces, `replace."
+  ([{s ::start-sym :as sys
+     :or {s 'lw:start}}]
+   (reduce (fn [sys f]
+             (try
+               (f sys)
+               (catch Exception e
+                 (log/error e
+                            "Error starting system. Stopping..."
+                            {:sys sys
+                             :fn f})
+                 (throw (ex-info "Error starting component system. System stopped."
+                                 {:sys (stop sys)
+                                  :fn f}
+                                 e)))))
+           sys
+           (plan (merge {::symbol s}
+                        sys)))))
 
 
 (defmacro with-sys
