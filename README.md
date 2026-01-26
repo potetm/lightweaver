@@ -12,7 +12,7 @@ That said, if you use `plan` during dev time, it cannot break your production
 environment.
 
 ```clj
-com.potetm/lightweaver {:mvn/version "0.0.2"}
+com.potetm/lightweaver {:mvn/version "0.0.3"}
 ```
 
 ## Quick Start
